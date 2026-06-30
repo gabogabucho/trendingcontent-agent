@@ -64,6 +64,7 @@ Options:
   --quick            Fewer sources, faster
   --deep             More sources, thorough
   --research-only    Output research only, skip content generation
+  --tweetclaw-export Local TweetClaw JSON or JSONL export to add as X/Twitter source evidence
 ```
 
 ### Examples
@@ -89,7 +90,16 @@ python scripts/trendingcontent.py --list-sources
 
 # Research only, no content
 python scripts/trendingcontent.py "LLMs" --days=14 --research-only
+
+# Add reviewed X/Twitter evidence from a local TweetClaw export
+python scripts/trendingcontent.py "AI developer tools" \
+  --platform=twitter \
+  --tweetclaw-export ./tweetclaw-export.jsonl
 ```
+
+TweetClaw exports are treated as local source context only. They can strengthen
+the research summary with public X/Twitter posts, URLs, handles, dates, and
+engagement signals, while trendingcontent still owns the brief and final copy.
 
 ---
 

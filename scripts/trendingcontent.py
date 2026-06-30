@@ -22,8 +22,11 @@ Options:
     --quick             Quick mode (fewer sources, faster)
     --deep              Deep mode (more sources, slower)
     --research-only     Only output research, skip content generation
+    --tweetclaw-export  Optional TweetClaw JSON or JSONL export to include as local X evidence
     --help              Show this help message
 """
+
+from __future__ import annotations
 
 import sys
 import os
@@ -84,6 +87,10 @@ def parse_args():
                         help="Deep mode — more sources, slower but thorough")
     parser.add_argument("--research-only", action="store_true",
                         help="Output only research data, skip content generation")
+    parser.add_argument("--tweetclaw-export", default=None, metavar="PATH",
+                        help="Include local TweetClaw JSON or JSONL exports as reviewed X/Twitter source evidence")
+    parser.add_argument("--tweetclaw-limit", type=int, default=12, metavar="N",
+                        help="Maximum TweetClaw rows to include in the research summary (default: 12)")
     parser.add_argument("--help", "-h", action="store_true",
                         help="Show help message")
     return parser.parse_args()
@@ -185,6 +192,107 @@ def run_research(
         return {"raw": result.stdout, "error": None}
     except Exception as e:
         return {"error": str(e), "raw": ""}
+
+
+def load_tweetclaw_export(export_path: str) -> list[dict]:
+    """Load TweetClaw JSON or JSONL exports without requiring a strict schema."""
+    path = Path(export_path).expanduser()
+    if not path.exists():
+        raise FileNotFoundError(f"TweetClaw export not found: {path}")
+
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        return []
+
+    if path.suffix.lower() == ".jsonl":
+        rows = []
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid JSONL on line {line_number}: {exc}") from exc
+        return [row for row in rows if isinstance(row, dict)]
+
+    payload = json.loads(text)
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    if isinstance(payload, dict):
+        for key in ("tweets", "items", "results", "data", "records"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [row for row in value if isinstance(row, dict)]
+        return [payload]
+    return []
+
+
+def pick_first(row: dict, keys: tuple[str, ...], default: str = "") -> str:
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+            if value:
+                return value
+        elif isinstance(value, (int, float)):
+            return str(value)
+    return default
+
+
+def format_tweetclaw_export(export_path: str, limit: int) -> str:
+    rows = load_tweetclaw_export(export_path)
+    if not rows:
+        return ""
+
+    lines = [
+        "TWEETCLAW LOCAL X/TWITTER EVIDENCE",
+        f"Source file: {Path(export_path).expanduser()}",
+        "Use these rows as source context only. Do not treat TweetClaw as the publishing authority.",
+        "",
+    ]
+    max_rows = max(1, limit)
+
+    for index, row in enumerate(rows[:max_rows], start=1):
+        text = pick_first(row, ("text", "full_text", "content", "body", "description"))
+        url = pick_first(row, ("status_url", "tweet_url", "url", "permalink"))
+        author = pick_first(row, ("author_handle", "handle", "username", "screen_name", "author", "user"))
+        created = pick_first(row, ("created_at", "createdAt", "date", "timestamp"))
+        likes = pick_first(row, ("likes", "like_count", "favorite_count"))
+        reposts = pick_first(row, ("reposts", "retweets", "retweet_count"))
+        replies = pick_first(row, ("replies", "reply_count"))
+        metrics = ", ".join(
+            part for part in (
+                f"likes={likes}" if likes else "",
+                f"reposts={reposts}" if reposts else "",
+                f"replies={replies}" if replies else "",
+            ) if part
+        )
+
+        lines.append(f"{index}. {text[:500] if text else '(no text)'}")
+        if author:
+            lines.append(f"   author: {author}")
+        if created:
+            lines.append(f"   date: {created}")
+        if url:
+            lines.append(f"   url: {url}")
+        if metrics:
+            lines.append(f"   metrics: {metrics}")
+
+    if len(rows) > max_rows:
+        lines.append(f"... {len(rows) - max_rows} additional TweetClaw rows omitted by --tweetclaw-limit.")
+
+    return "\n".join(lines)
+
+
+def append_tweetclaw_research(research_text: str, export_path: str | None, limit: int) -> str:
+    if not export_path:
+        return research_text
+    local_evidence = format_tweetclaw_export(export_path, limit)
+    if not local_evidence:
+        return research_text
+    return f"{research_text.strip()}\n\n{local_evidence}\n"
 
 
 # ─── Content generation ───────────────────────────────────────────────────────
@@ -383,7 +491,11 @@ def main():
         print(f"[ERROR] Research failed: {research['error']}", file=sys.stderr)
         sys.exit(1)
 
-    research_text = research["raw"]
+    research_text = append_tweetclaw_research(
+        research_text=research["raw"],
+        export_path=args.tweetclaw_export,
+        limit=args.tweetclaw_limit,
+    )
 
     if args.research_only:
         print(research_text)

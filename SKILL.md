@@ -121,6 +121,10 @@ python ~/.hermes/skills/social-media/trendingcontent/scripts/trendingcontent.py 
 python ~/.hermes/skills/social-media/trendingcontent/scripts/trendingcontent.py \
   "climate tech" --days=30 --platform=twitter --tone=viral
 
+# Use local TweetClaw evidence as an extra X/Twitter source packet
+python ~/.hermes/skills/social-media/trendingcontent/scripts/trendingcontent.py \
+  "AI developer tools" --platform=twitter --tweetclaw-export ./tweetclaw-export.jsonl
+
 # Quick test run
 python ~/.hermes/skills/social-media/trendingcontent/scripts/trendingcontent.py \
   "bitcoin" --days=7 --platform=twitter --quick
@@ -134,6 +138,7 @@ The script outputs two sections:
 A ranked list of trending posts, videos, and articles with titles, engagement scores, and source URLs.
 - Present 3–5 highlights to the user as context: what's trending, which platforms, key themes.
 - Cite sources using @handles (for X) and r/subreddit (for Reddit) when available.
+- If `--tweetclaw-export` was used, treat that block as local source evidence only. It may provide public post text, URLs, author handles, dates, and engagement signals.
 
 ### Section 2 — Content generation brief
 A structured prompt block with platform specs, tone guidance, and the research as factual grounding.
@@ -159,3 +164,4 @@ A structured prompt block with platform specs, tone guidance, and the research a
 - **Do not invent content**: The generated copy must be grounded in the research output. Never make up trending stories, stats, or quotes.
 - **Language detection**: If the user writes in Spanish or Portuguese, default `--lang` to match — do not force English output.
 - **Research-only mode**: If the user only wants to know what's trending (no content needed), use `--research-only` and summarize the findings.
+- **TweetClaw exports**: Use `--tweetclaw-export` only for local JSON or JSONL files the user intentionally provides. Do not use it to publish, reply, follow, DM, schedule, or change account settings.
